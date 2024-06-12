@@ -121,6 +121,10 @@ public class MainActivity extends AppCompatActivity {
         if(surfaceView.getHolder().getSurface().isValid()){
             Log.d(TAG, "initSurface isValid");
             initSDK();
+
+            // video stream from camera
+//            videoCapture = new VideoCapture(Common.ChannelIndex.E_CHANNEL_VIDEO_MAIN);
+//            videoCapture.startVideoCapture();
         }else {
             surfaceView.getHolder().addCallback(new SurfaceHolder.Callback() {
                 @Override
@@ -262,6 +266,9 @@ public class MainActivity extends AppCompatActivity {
 
         // Note: network must be ok before enable mqtt active
         ConfigProvider.enableMQTT(true);
+        ConfigProvider.enableQR(true);
+
+
 
         IPCServiceManager.getInstance().setResetHandler(isHardward -> {
 

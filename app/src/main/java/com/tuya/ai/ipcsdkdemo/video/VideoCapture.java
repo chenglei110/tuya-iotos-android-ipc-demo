@@ -7,18 +7,23 @@ import android.util.Log;
 import android.view.SurfaceHolder;
 
 import com.tuya.smart.aiipc.ipc_sdk.api.Common;
+import com.tuya.smart.aiipc.ipc_sdk.api.IMediaTransManager;
 import com.tuya.smart.aiipc.ipc_sdk.api.IParamConfigManager;
 import com.tuya.smart.aiipc.ipc_sdk.service.IPCServiceManager;
 import com.tuya.smart.aiipc.netconfig.ConfigProvider;
 
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.List;
 
 public class VideoCapture {
 
     private Camera mCamera;
     private byte[] pixelBuffer;
-    VideoCodec mCodec;
+//    VideoCodec mCodec;
+    H264Encoder h264Encoder;
     private SurfaceTexture mSurfaceTexture;
 
     private int mChannel;
@@ -26,12 +31,11 @@ public class VideoCapture {
     public VideoCapture(int channel) {
 
         pixelBuffer = new byte[1280 * 720 * 3 / 2];
-        mCodec = new VideoCodec(mChannel = channel);
-
+//        mCodec = new VideoCodec(mChannel = channel);
+        h264Encoder = new H264Encoder(1280, 720, 30, 1000*1000);
     }
     public void startVideoCapture() {
         startPreview();
-        mCodec.startCodec();
     }
 
     private void  openCamera() {
@@ -43,10 +47,13 @@ public class VideoCapture {
         mCamera = Camera.open(Camera.CameraInfo.CAMERA_FACING_BACK);
 
         Camera.Parameters p = mCamera.getParameters();
+        for(int i : p.getSupportedPreviewFormats()){
+            Log.d("Preview", String.format("getSupportedPreviewFormats: 0x%x", i));
+        }
         //根据自己的设置更改
         p.setPreviewFormat(ImageFormat.NV21);
 //        p.setPreviewFormat(ImageFormat.YV12);
-        p.setPreviewFpsRange(30000, 30000);
+        p.setPreviewFpsRange(25000, 25000);
         p.setPreviewSize(1280, 720);
 
         Log.d("Preview", "ccc startPreview1111 ");
@@ -107,19 +114,62 @@ public class VideoCapture {
 
         mCamera.addCallbackBuffer(pixelBuffer);
 
-        mCamera.setPreviewCallbackWithBuffer(new Camera.PreviewCallback() {
-            @Override
-            public void onPreviewFrame(byte[] data, Camera camera) {
+        mCamera.setPreviewCallbackWithBuffer((data, camera) -> {
 //                Log.d("Video", "onPreviewFrame: ");
-                //编码
-                byte[] pixelData = new byte[1280 * 720 * 3 / 2];
-                System.arraycopy(data, 0, pixelData, 0, data.length);
-                mCodec.encodeH264(pixelData);
-                camera.addCallbackBuffer(pixelBuffer);
+            //编码
+            byte[] pixelData = new byte[1280 * 720 * 3 / 2];
+            byte[] tempData = nv21ToI420(data, 1280, 720);
+            System.arraycopy(tempData, 0, pixelData, 0, tempData.length);
+//                mCodec.encodeH264(pixelData);
+            if(h264Encoder != null){
+                byte[] encodeData = new byte[1280 * 720 * 3 / 2];
+                int ret  =  h264Encoder.Encode(pixelData, encodeData);
+//                    transManager.pushMediaStream()
+                    try {
+                        outputStream.write(encodeData, 0, ret);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
             }
+
+            camera.addCallbackBuffer(pixelBuffer);
         });
         mCamera.startPreview();
         Log.d("Preview", "ccc startPreview2222 ");
 
+    }
+
+    /**
+     * nv21转I420
+     * @param data
+     * @param width
+     * @param height
+     * @return
+     */
+    private byte[] nv21ToI420(byte[] data, int width, int height) {
+        byte[] ret = new byte[data.length];
+        int total = width * height;
+
+        ByteBuffer bufferY = ByteBuffer.wrap(ret, 0, total);
+        ByteBuffer bufferU = ByteBuffer.wrap(ret, total, total / 4);
+        ByteBuffer bufferV = ByteBuffer.wrap(ret, total + total / 4, total / 4);
+
+        bufferY.put(data, 0, total);
+        for (int i=total; i<data.length; i+=2) {
+            bufferV.put(data[i]);
+            bufferU.put(data[i+1]);
+        }
+
+        return ret;
+    }
+
+    FileOutputStream outputStream;
+
+    {
+        try {
+            outputStream = new FileOutputStream("/sdcard/h264.data");
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        }
     }
 }
